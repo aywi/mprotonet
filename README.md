@@ -36,7 +36,7 @@ unzip MICCAI_BraTS2020_TrainingData.zip -d ./data/BraTS_2020
 
 ## Environment Configuration
 
-Prerequisites: Python (>=3.7), PyTorch, TorchIO, Captum.
+Prerequisites: Python (>=3.7), NumPy, SciPy, scikit-learn, Matplotlib, Jupyter, PyTorch, Captum, OpenCV, TorchIO.
 
 If you are using Miniconda/Anaconda, you can run `setup_conda.sh` (Linux) or `setup_conda.cmd` (Windows) in `env_config/`  to create a new conda environment called `mprotonet` with all the required packages.
 
