@@ -28,17 +28,17 @@ Stay tuned for the latest updates!
 
 - [MICCAI Brain Tumor Segmentation (BraTS) Challenge 2020](https://www.med.upenn.edu/cbica/brats2020/ "https://www.med.upenn.edu/cbica/brats2020/") (BraTS_2020)
 
-Follow the instructions from the website above to request the BraTS_2020 dataset (it may take 1~4 days), and then download `MICCAI_BraTS2020_TrainingData.zip`:
+Please follow the instructions on the website above to request the BraTS_2020 dataset (it may take 1~4 days) and download `MICCAI_BraTS2020_TrainingData.zip` to the `data/` folder. Then unzip the dataset:
 
 ```sh
-unzip MICCAI_BraTS2020_TrainingData.zip -d ./data/BraTS_2020
+unzip ./data/MICCAI_BraTS2020_TrainingData.zip -d ./data/BraTS_2020
 ```
 
 ## Environment Configuration
 
 Prerequisites: Python (>=3.7), NumPy, SciPy, scikit-learn, Matplotlib, Jupyter, PyTorch, Captum, OpenCV, TorchIO.
 
-If you are using Miniconda/Anaconda, you can run `setup_conda.sh` (Linux) or `setup_conda.cmd` (Windows) in `env_config/`  to create a new conda environment called `mprotonet` with all the required packages.
+If you are using Miniconda/Anaconda, you can run `setup_conda.sh` (Linux) or `setup_conda.cmd` (Windows) in `env_config/`  to create a new conda environment called `mprotonet` with all the required packages (they can take up about 11 GB of disk space).
 
 ## Experiments
 
