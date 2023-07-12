@@ -5,8 +5,6 @@ import ast
 import time
 import warnings
 
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,9 +17,9 @@ from torch.utils.data import DataLoader, TensorDataset
 import models
 import push
 from interpret import attr_methods, attribute
-from utils import (FocalLoss, accuracy, balanced_accuracy, cross_entropy, get_hashes, get_m_indexes,
-                   get_transform_aug, iad, lc, load_data, load_subjs_batch, makedir, output_results,
-                   preload, preprocess, print_param, print_results, process_iad, save_cvs)
+from utils import (FocalLoss, get_hashes, get_m_indexes, get_transform_aug, iad, lc, load_data,
+                   load_subjs_batch, makedir, output_results, preload, preprocess, print_param,
+                   print_results, process_iad, save_cvs)
 
 
 def train(net, data_loader, optimizer, grid=None, **kwargs):
@@ -55,8 +53,8 @@ def train_mppnet(net, data_loader, optimizer, use_l1_mask=True, coefs=None, stag
     log(f"\t{stage}", end='', flush=True)
     start = time.time()
     n_examples, n_correct, n_batches = 0, 0, 0
-    total_loss, total_ce, total_clst, total_sep, total_avg_sep, total_l1 = 0, 0, 0, 0, 0, 0
-    total_ortho, total_ss, total_map, total_ce2 = 0, 0, 0, 0
+    total_loss, total_cls, total_clst, total_sep, total_avg_sep, total_l1 = 0, 0, 0, 0, 0, 0
+    total_map, total_oc = 0, 0
     for b, subjs_batch in enumerate(data_loader):
         data, target, _ = load_subjs_batch(subjs_batch)
         data = data.to(device, non_blocking=True)
@@ -66,16 +64,15 @@ def train_mppnet(net, data_loader, optimizer, use_l1_mask=True, coefs=None, stag
                 output, min_distances, x, p_map = net(data)
             else:
                 output, min_distances = net(data)
-            # Calculate cross-entropy loss
-            cross_entropy = criterion(output, target)
-            loss_ce = coefs['ce'] * cross_entropy
-            total_ce += loss_ce.item()
+            # Calculate classification loss
+            classification = criterion(output, target)
+            loss_cls = coefs['cls'] * classification
+            total_cls += loss_cls.item()
             if stage in ['warm_up', 'joint']:
                 # Calculate cluster loss
                 max_dist = torch.prod(torch.tensor(net.prototype_shape[1:])).to(device)
                 target_weight = class_weight.to(device)[target]
                 target_weight = target_weight / target_weight.sum()
-                # prototypes_of_correct_class is a tensor of shape batch_size * num_prototypes
                 prototypes_correct = net.prototype_class_identity[:, target].mT
                 inv_distances_correct = ((max_dist - min_distances) * prototypes_correct).amax(1)
                 cluster = ((max_dist - inv_distances_correct) * target_weight).sum()
@@ -91,16 +88,6 @@ def train_mppnet(net, data_loader, optimizer, use_l1_mask=True, coefs=None, stag
                 avg_separation = (min_distances * prototypes_wrong).sum(1) / prototypes_wrong.sum(1)
                 avg_separation = (avg_separation * target_weight).sum()
                 total_avg_sep += avg_separation.item()
-                # Calculate orthogonality loss
-                p = net.prototype_vectors.reshape(net.num_classes, net.num_prototypes_per_class, -1)
-                i_p = torch.eye(p.shape[1]).to(device)
-                orthogonality = torch.relu(torch.linalg.norm(p @ p.mT - i_p, dim=(1, 2))).sum()
-                loss_ortho = coefs['ortho'] * orthogonality
-                total_ortho += loss_ortho.item()
-                # Calculate subspace-separation loss
-                subspace_separation = F.pdist((p.mT @ p).flatten(1)).sum() * 2 ** (-0.5)
-                loss_ss = coefs['ss'] * subspace_separation
-                total_ss += loss_ss.item()
                 # Calculate mapping loss
                 if getattr(net, 'module.p_mode' if is_parallel else 'p_mode') >= 2:
                     ri = torch.randint(2, (1,)).item()
@@ -112,30 +99,30 @@ def train_mppnet(net, data_loader, optimizer, use_l1_mask=True, coefs=None, stag
                     mapping = f_l1(f_affine(p_map) - net.get_p_map(f_affine(x))) + f_l1(p_map)
                     loss_map = coefs['map'] * mapping
                     total_map += loss_map.item()
-                # Calculate cross-entropy 2nd loss
+                # Calculate online-CAM loss
                 if getattr(net, 'module.p_mode' if is_parallel else 'p_mode') >= 4:
                     p_x = net.lse_pooling(net.p_map[:-3](x).flatten(2))
                     output2 = net.last_layer(p_x @ net.p_map[-3].weight.flatten(1).mT)
-                    cross_entropy2 = criterion(output2, target)
-                    loss_ce2 = coefs['ce2'] * cross_entropy2
-                    total_ce2 += loss_ce2.item()
+                    online_cam = criterion(output2, target)
+                    loss_oc = coefs['OC'] * online_cam
+                    total_oc += loss_oc.item()
                 # Calculate total loss
-                loss = loss_ce + loss_clst + loss_sep + loss_ortho + loss_ss
+                loss = loss_cls + loss_clst + loss_sep
                 if getattr(net, 'module.p_mode' if is_parallel else 'p_mode') >= 2:
                     loss = loss + loss_map
                 if getattr(net, 'module.p_mode' if is_parallel else 'p_mode') >= 4:
-                    loss = loss + loss_ce2
+                    loss = loss + loss_oc
             else:
-                # Calculate L1 loss
+                # Calculate L1-regularization loss
                 if use_l1_mask:
                     l1_mask = 1 - net.prototype_class_identity.mT
                     l1 = torch.linalg.vector_norm(net.last_layer.weight * l1_mask, ord=1)
                 else:
                     l1 = torch.linalg.vector_norm(net.last_layer.weight, ord=1)
-                loss_l1 = coefs['l1'] * l1
+                loss_l1 = coefs['L1'] * l1
                 total_l1 += loss_l1.item()
                 # Calculate total loss
-                loss = loss_ce + loss_l1
+                loss = loss_cls + loss_l1
             total_loss += loss.item()
             # Evaluation statistics
             n_examples += target.shape[0]
@@ -145,30 +132,19 @@ def train_mppnet(net, data_loader, optimizer, use_l1_mask=True, coefs=None, stag
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
-        # print(f"Before del: {torch.cuda.memory_allocated(device) >> 20} MB (allocated)", end='',
-        #       flush=True)
-        # print(f" {torch.cuda.memory_reserved(device) >> 20} MB (reserved)", end='', flush=True)
-        # del data, target, output, min_distances
-        # if getattr(net, 'module.p_mode' if is_parallel else 'p_mode') >= 2:
-        #     del x, p_map
-        # print(f"  After del: {torch.cuda.memory_allocated(device) >> 20} MB (allocated)", end='',
-        #       flush=True)
-        # print(f" {torch.cuda.memory_reserved(device) >> 20} MB (reserved)")
     with torch.no_grad():
         p_avg_pdist = F.pdist(net.prototype_vectors.flatten(1)).mean().item()
     end = time.time()
     log(f"\ttime: {end - start:.2f}s,"
         f" acc: {n_correct / n_examples:.4f},"
         f" loss: {total_loss / n_batches:.4f},"
-        f" ce: {total_ce / n_batches:.4f},"
+        f" cls: {total_cls / n_batches:.4f},"
         f" clst: {total_clst / n_batches:.4f},"
         f" sep: {total_sep / n_batches:.4f},"
         f" avg_sep: {total_avg_sep / n_batches:.4f},"
-        f" l1: {total_l1 / n_batches:.4f},"
-        f" ortho: {total_ortho / n_batches:.4f},"
-        f" ss: {total_ss / n_batches:.4f},"
+        f" L1: {total_l1 / n_batches:.4f},"
         f" map: {total_map / n_batches:.4f},"
-        f" ce2: {total_ce2 / n_batches:.4f},"
+        f" OC: {total_oc / n_batches:.4f},"
         f" p_avg_pdist: {p_avg_pdist:.4f}")
 
 
@@ -181,32 +157,15 @@ def test(net, data_loader, grid=None):
     if grid and grid.get('attrs'):
         methods = grid['attrs']
     elif 'MProtoNet' in model_name:
-        methods = 'MG'
+        methods = 'MGU'
     else:
-        methods = 'G'
+        methods = 'GU'
     with torch.no_grad():
         for b, subjs_batch in enumerate(data_loader):
             data, target, seg_map = load_subjs_batch(subjs_batch)
             data = data.to(device, non_blocking=True)
             target = target.argmax(1).to(device, non_blocking=True)
             seg_map = seg_map.to(device, non_blocking=True)
-            if grid and grid.get('trans'):
-                data1 = data.permute(0, 4, 1, 2, 3).reshape((-1,) + data.shape[1:-1])
-                data1 = net.trans(data1).reshape(data.shape[0], data.shape[4], 3, data.shape[2:-1])
-                data1 = data1.permute(0, 1, 3, 4, 2).detach().cpu().numpy()
-                print(data1.min(), data1.max(), data1.mean(), data1.std())
-                data1 = (data1 - data1.min()) / (data1.max() - data1.min())
-                trans_dir = f'../results/saved_imgs/{args.model_name}' \
-                            f'{"f" if grid.get("fixed") else ""}_trans/'
-                makedir(trans_dir)
-                matplotlib.use('agg')
-                for d in range(data1.shape[0]):
-                    plt.figure(figsize=(6, 4))
-                    plt.axis('off')
-                    plt.imshow(data1[d, data1.shape[1] // 2, :, :, :])
-                    plt.savefig(f'{trans_dir}i{i}_b{b:02d}_{d:02d}.png', bbox_inches='tight',
-                                pad_inches=0)
-                    plt.close()
             f_x.append(F.softmax(net(data), dim=1).cpu().numpy())
             print("Missing Modalities:", end='', flush=True)
             m_indexes = get_m_indexes()
@@ -225,7 +184,7 @@ def test(net, data_loader, grid=None):
                 print(f" {method}:", end='', flush=True)
                 if not lcs.get(method):
                     lcs[method] = {f'({a}, Th=0.5) {m}': []
-                                   for a in ['WT', 'TC'] for m in ['AP', 'DSC', 'IoU']}
+                                   for a in ['WT'] for m in ['AP', 'DSC']}
                 if not iads.get(method):
                     iads[method] = {m: [] for m in ['IA', 'ID', 'IAD']}
                 tic = time.time()
@@ -234,14 +193,6 @@ def test(net, data_loader, grid=None):
                     lc(attr, seg_map, annos=[1, 2, 4], threshold=0.5, metric='AP'))
                 lcs[method]['(WT, Th=0.5) DSC'].append(
                     lc(attr, seg_map, annos=[1, 2, 4], threshold=0.5, metric='DSC'))
-                lcs[method]['(WT, Th=0.5) IoU'].append(
-                    lc(attr, seg_map, annos=[1, 2, 4], threshold=0.5, metric='IoU'))
-                lcs[method]['(TC, Th=0.5) AP'].append(
-                    lc(attr, seg_map, annos=[1, 4], threshold=0.5, metric='AP'))
-                lcs[method]['(TC, Th=0.5) DSC'].append(
-                    lc(attr, seg_map, annos=[1, 4], threshold=0.5, metric='DSC'))
-                lcs[method]['(TC, Th=0.5) IoU'].append(
-                    lc(attr, seg_map, annos=[1, 4], threshold=0.5, metric='IoU'))
                 iads[method]['IA'].append(
                     iad(net, data, attr, n_intervals=50, quantile=True, addition=True))
                 iads[method]['ID'].append(
@@ -274,7 +225,6 @@ def parse_arguments():
     parser.add_argument('-p', '--param-grid', type=str, default=None,
                         help="grid of hyper-parameters")
     parser.add_argument('-s', '--seed', type=int, default=0, help="random seed")
-    parser.add_argument('-v', '--v-mod', type=int, choices={0, 1}, default=0, help="verbose mode")
     parser.add_argument('--bc-opt', type=str,
                         choices={'Off', 'BCE', 'B2CE', 'CBCE', 'FL', 'BFL', 'B2FL', 'CBFL'},
                         default='BFL', help="balanced classification option")
@@ -300,7 +250,7 @@ def parse_arguments():
                         help="whether to use automatic mixed precision")
     parser.add_argument('--use-da', type=int, choices={0, 1}, default=0,
                         help="whether to use deterministic algorithms.")
-    parser.add_argument('--gpus', type=str, default='0', help="indexes of GPUs")
+    parser.add_argument('--gpus', type=str, default='0', help="index(es) of GPU(s)")
     parser.add_argument('--load-model', type=str, default=None,
                         help="whether to load the model files")
     parser.add_argument('--save-model', type=int, choices={0, 1}, default=0,
@@ -313,7 +263,7 @@ if __name__ == '__main__':
     # Parse command-line arguments
     args = parse_arguments()
     model_name, data_path = args.model_name, args.data_path
-    max_n_epoch, param_grid, seed, v_mod = args.max_n_epoch, args.param_grid, args.seed, args.v_mod
+    max_n_epoch, param_grid, seed = args.max_n_epoch, args.param_grid, args.seed
     bc_opt, op_opt, lr_opt, lr_n, wu_n = args.bc_opt, args.op_opt, args.lr_opt, args.lr_n, args.wu_n
     early_stop, n_workers, n_threads = args.early_stop, args.n_workers, args.n_threads
     preloaded, augmented, aug_seq = args.preloaded, args.augmented, args.aug_seq
@@ -413,9 +363,6 @@ if __name__ == '__main__':
             out_size = dataset_train[0]['label'].shape[0]
         loader_train = DataLoader(dataset_train, batch_size=best_grid['batch_size'], shuffle=True,
                                   num_workers=n_workers, pin_memory=True, drop_last=True)
-        if v_mod > 0:
-            loader_train_ = DataLoader(dataset_train, batch_size=best_grid['batch_size'],
-                                       num_workers=n_workers, pin_memory=True)
         loader_test = DataLoader(dataset_test, batch_size=(best_grid['batch_size'] + 1) // 2,
                                  num_workers=n_workers, pin_memory=True)
         np.random.seed(seed)
@@ -463,59 +410,30 @@ if __name__ == '__main__':
             prototype_img_filename_prefix = 'prototype-img'
             prototype_self_act_filename_prefix = 'prototype-self-act'
             proto_bound_boxes_filename_prefix = 'bb'
-            if net.features_3d:
-                params = [
-                    {'params': net.features.parameters(), 'lr': best_grid['lr'],
-                     'weight_decay': best_grid['wd']},
-                    {'params': net.add_ons.parameters(), 'lr': best_grid['lr'],
-                     'weight_decay': best_grid['wd']},
-                    {'params': net.prototype_vectors, 'lr': best_grid['lr'], 'weight_decay': 0},
-                ]
-            else:
-                params = [
-                    {'params': net.trans.parameters(), 'lr': best_grid['lr'] * 0.1,
-                     'weight_decay': best_grid['wd']},
-                    {'params': net.features.parameters(), 'lr': best_grid['lr'] * 0.1,
-                     'weight_decay': best_grid['wd']},
-                    {'params': net.add_ons.parameters(), 'lr': best_grid['lr'],
-                     'weight_decay': best_grid['wd']},
-                    {'params': net.prototype_vectors, 'lr': best_grid['lr'], 'weight_decay': 0},
-                ]
-                params_warm_up = [
-                    {'params': net.trans.parameters(), 'lr': best_grid['lr'] * 0.1,
-                     'weight_decay': best_grid['wd']},
-                    {'params': net.add_ons.parameters(), 'lr': best_grid['lr'],
-                     'weight_decay': best_grid['wd']},
-                    {'params': net.prototype_vectors, 'lr': best_grid['lr'], 'weight_decay': 0},
-                ]
+            params = [
+                {'params': net.features.parameters(), 'lr': best_grid['lr'],
+                 'weight_decay': best_grid['wd']},
+                {'params': net.add_ons.parameters(), 'lr': best_grid['lr'],
+                 'weight_decay': best_grid['wd']},
+                {'params': net.prototype_vectors, 'lr': best_grid['lr'], 'weight_decay': 0},
+            ]
             if getattr(net, 'module.p_mode' if is_parallel else 'p_mode') >= 2:
                 params += [
                     {'params': net.p_map.parameters(), 'lr': best_grid['lr'],
                      'weight_decay': best_grid['wd']},
                 ]
-                if not net.features_3d:
-                    params_warm_up += [
-                        {'params': net.p_map.parameters(), 'lr': best_grid['lr'],
-                         'weight_decay': best_grid['wd']},
-                    ]
             params_last_layer = [
                 {'params': net.last_layer.parameters(), 'lr': best_grid['lr'],
                  'weight_decay': 0},
             ]
             if op_opt == 'Adam':
                 optimizer = optim.Adam(params)
-                if not net.features_3d:
-                    optimizer_warm_up = optim.Adam(params_warm_up)
                 optimizer_last_layer = optim.Adam(params_last_layer)
             elif op_opt == 'AdamW':
                 optimizer = optim.AdamW(params)
-                if not net.features_3d:
-                    optimizer_warm_up = optim.AdamW(params_warm_up)
                 optimizer_last_layer = optim.AdamW(params_last_layer)
             else:
                 optimizer = optim.SGD(params, momentum=0.9)
-                if not net.features_3d:
-                    optimizer_warm_up = optim.SGD(params_warm_up, momentum=0.9)
                 optimizer_last_layer = optim.SGD(params_last_layer, momentum=0.9)
         else:
             if op_opt == 'Adam':
@@ -539,17 +457,8 @@ if __name__ == '__main__':
                 lr_n = best_n_epoch - wu_n if 'WU' in lr_opt else best_n_epoch - wu_e
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, lr_n)
         if 'WU' in lr_opt:
-            if 'MProtoNet' in model_name and not net.features_3d:
-                scheduler_warm_up = optim.lr_scheduler.LambdaLR(optimizer_warm_up,
-                                                                lambda e: (e + 1) / wu_n)
-                scheduler0 = optim.lr_scheduler.LambdaLR(optimizer,
-                                                         lambda e: (e + 1) / wu_n + wu_e / wu_n)
-                scheduler = optim.lr_scheduler.SequentialLR(optimizer, [scheduler0, scheduler],
-                                                            [wu_n - wu_e])
-            else:
-                scheduler0 = optim.lr_scheduler.LambdaLR(optimizer, lambda e: (e + 1) / wu_n)
-                scheduler = optim.lr_scheduler.SequentialLR(optimizer, [scheduler0, scheduler],
-                                                            [wu_n])
+            scheduler0 = optim.lr_scheduler.LambdaLR(optimizer, lambda e: (e + 1) / wu_n)
+            scheduler = optim.lr_scheduler.SequentialLR(optimizer, [scheduler0, scheduler], [wu_n])
         if bc_opt in ['BCE', 'BFL']:
             class_weight = torch.FloatTensor(1 / y[I_train].sum(0))
         elif bc_opt in ['B2CE', 'B2FL']:
@@ -571,10 +480,6 @@ if __name__ == '__main__':
                 net.load_state_dict(torch.load(model_path_i, map_location=device))
         else:
             print("Epoch =", end='', flush=True)
-            if v_mod > 0:
-                train_acc, test_acc = np.zeros(best_n_epoch), np.zeros(best_n_epoch)
-                train_bac, test_bac = np.zeros(best_n_epoch), np.zeros(best_n_epoch)
-                train_ce, test_ce = np.zeros(best_n_epoch), np.zeros(best_n_epoch)
             np.random.seed(seed)
             torch.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
@@ -592,12 +497,6 @@ if __name__ == '__main__':
                     train(net, loader_train, optimizer)
                     if lr_opt != 'Off' and ('WU' in lr_opt or e >= wu_e):
                         scheduler.step()
-                elif 'MProtoNet' in model_name and not net.features_3d and e < wu_e:
-                    if 'WU' in lr_opt:
-                        print(f"(lr={scheduler_warm_up.get_last_lr()[0]:g})", end='', flush=True)
-                    train(net, loader_train, optimizer_warm_up, grid=best_grid, stage='warm_up')
-                    if 'WU' in lr_opt:
-                        scheduler_warm_up.step()
                 else:
                     if lr_opt != 'Off':
                         print(f"(lr={scheduler.get_last_lr()[0]:g})", end='', flush=True)
@@ -621,15 +520,6 @@ if __name__ == '__main__':
                     for j in range(10):
                         train(net, loader_train, optimizer_last_layer, grid=best_grid,
                               stage=f'last_{j}')
-                if v_mod > 0:
-                    f_x_train, _ = test(net, loader_train_)
-                    train_acc[e] = accuracy(f_x_train, y[I_train])
-                    train_bac[e] = balanced_accuracy(f_x_train, y[I_train])
-                    train_ce[e] = cross_entropy(f_x_train, y[I_train])
-                    f_x_test, _ = test(net, loader_test)
-                    test_acc[e] = accuracy(f_x_test, y[I_test])
-                    test_bac[e] = balanced_accuracy(f_x_test, y[I_test])
-                    test_ce[e] = cross_entropy(f_x_test, y[I_test])
             print()
         # TODO: Pruning
         del dataset_train, loader_train
@@ -644,7 +534,7 @@ if __name__ == '__main__':
         for method, lcs_ in lcs_test.items():
             if not lcs.get(method):
                 lcs[method] = {f'({a}, Th=0.5) {m}': np.zeros((cv_fold, 4))
-                               for a in ['WT', 'TC'] for m in ['AP', 'DSC', 'IoU']}
+                               for a in ['WT'] for m in ['AP', 'DSC']}
             for metric, lcs__ in lcs_.items():
                 lcs[method][metric][i] = lcs__.mean(0)
         if 'MProtoNet' in model_name:
@@ -660,25 +550,6 @@ if __name__ == '__main__':
                 iads[method] = {m: np.zeros((cv_fold, 2)) for m in ['IA', 'ID', 'IAD']}
             for metric, iads__ in iads_.items():
                 iads[method][metric][i] = iads__
-        if v_mod > 0:
-            print("Training Accuracy:")
-            print(np.array2string(train_acc, max_line_width=88,
-                                  formatter={'float_kind': lambda x: "%7.4f" % x}))
-            print("Training Balanced Accuracy:")
-            print(np.array2string(train_bac, max_line_width=88,
-                                  formatter={'float_kind': lambda x: "%7.4f" % x}))
-            print("Training Cross Entropy:")
-            print(np.array2string(train_ce, max_line_width=88,
-                                  formatter={'float_kind': lambda x: "%7.4f" % x}))
-            print("Test Accuracy:")
-            print(np.array2string(test_acc, max_line_width=88,
-                                  formatter={'float_kind': lambda x: "%7.4f" % x}))
-            print("Test Balanced Accuracy:")
-            print(np.array2string(test_bac, max_line_width=88,
-                                  formatter={'float_kind': lambda x: "%7.4f" % x}))
-            print("Test Cross Entropy:")
-            print(np.array2string(test_ce, max_line_width=88,
-                                  formatter={'float_kind': lambda x: "%7.4f" % x}))
         print_results("Test", f_x[I_test], y[I_test], m_f_xes_test, lcs_test, n_prototype,
                       iads_test)
         if save_model and load_model is None:

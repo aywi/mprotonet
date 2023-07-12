@@ -666,7 +666,7 @@ def output_results(dataset, args, batch_size, f_x, y, m_f_xes=None, lcs=None, n_
         s.connect(('10.254.254.254', 1))
         ip = s.getsockname()[0]
     cur_time = time.strftime('%Y/%m/%d %H:%M:%S %z')
-    opts_hash, _ = get_hashes(args)
+    opts_hash = get_hashes(args)
     with open(file, 'a', encoding='utf-8', newline='\n') as f:
         f.write(f"# {hostname} ({ip}): {cur_time}\n\n")
         f.write(f"```python\n{args}\n```\n\n")
@@ -751,14 +751,15 @@ def output_results(dataset, args, batch_size, f_x, y, m_f_xes=None, lcs=None, n_
 
 
 def save_cvs(cv_dir, args, f_x, y, lcs, iads, splits):
-    opts_hash, _ = get_hashes(args)
+    opts_hash = get_hashes(args)
     file = f'{cv_dir}{args.model_name}_{opts_hash}.joblib'
     bacs = f_splits(splits, balanced_accuracy, f_x, y)
     aucs = f_splits(splits, auroc, f_x, y)
-    method = 'MPPNet' if lcs.get('MPPNet') else 'GradCAM'
+    method = 'MProtoNet' if lcs.get('MProtoNet') else 'GradCAM'
     aps = lcs[method]['(WT, Th=0.5) AP'].mean(1)
-    method = 'MPPNet' if iads.get('MPPNet') else 'GradCAM'
+    dscs = lcs[method]['(WT, Th=0.5) DSC'].mean(1)
+    method = 'MProtoNet' if iads.get('MProtoNet') else 'GradCAM'
     ias = iads[method]['IA'][:, 1]
     ids = iads[method]['ID'][:, 1]
-    cvs = {'bacs': bacs, 'aucs': aucs, 'aps': aps, 'ias': ias, 'ids': ids}
+    cvs = {'bacs': bacs, 'aucs': aucs, 'aps': aps, 'dscs': dscs, 'ias': ias, 'ids': ids}
     joblib.dump(cvs, file, compress=True)

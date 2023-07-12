@@ -94,11 +94,10 @@ def conv_info(net):
 
 
 # 3-dimensional convolutional neural network with predefined architectures
-class CNN3D(nn.Module):
-    def __init__(self, in_size=(4, 240, 240, 155), out_size=2, c_mode=0, features='resnet50_ri',
-                 n_layers=7, **kwargs):
-        super(CNN3D, self).__init__()
-        self.c_mode = c_mode
+class CNN(nn.Module):
+    def __init__(self, in_size=(4, 240, 240, 155), out_size=2, features='resnet50_ri', n_layers=7,
+                 **kwargs):
+        super(CNN, self).__init__()
         self.features = features_imagenet1k(features)[:n_layers]
         self.features_name = features + f'[:{n_layers}]' if n_layers else features
         add_ons_channels = [m for m in self.features.modules()
@@ -114,36 +113,26 @@ class CNN3D(nn.Module):
             nn.Flatten(1)
         )
         self.fc = nn.Linear(128, out_size, bias=False)
-        if self.c_mode >= 1:
-            self.c_weight = nn.Parameter(torch.ones(in_size[0]))
-            if self.features_name.startswith('resnet'):
-                init_resnet3d_features(self.features, in_channels=1)
-        else:
-            if self.features_name.startswith('resnet'):
-                init_resnet3d_features(self.features, in_channels=in_size[0])
+        if self.features_name.startswith('resnet'):
+            init_resnet3d_features(self.features, in_channels=in_size[0])
         init_conv(self.add_ons)
 
     def forward(self, x, missing=None):
-        if self.c_mode >= 1:
-            c_size = x.shape[1]
-            x = x.reshape((-1, 1) + x.shape[2:])
         x = self.features(x)
         x = self.add_ons(x)
         x = self.fc(x)
-        if self.c_mode >= 1:
-            x = x.reshape(-1, c_size, x.shape[1])
-            if missing is not None and not self.training:
-                x[:, missing] = 0
-            x = (x * F.softmax(self.c_weight, dim=0).reshape(-1, 1)).sum(1)
         return x
+
+
+def CNN3D(**kwargs):
+    return CNN(**kwargs)
 
 
 # Medical Prototype Network (MProtoNet)
 class MProtoNet(nn.Module):
-    def __init__(self, in_size=(4, 240, 240, 155), out_size=2, c_mode=0, features_3d=True,
-                 features='resnet50_ri', n_layers=7, prototype_shape=(20, 128, 1, 1, 1),
-                 init_weights=True, f_dist='l2', prototype_activation_function='log', p_mode=0,
-                 topk_p=1, **kwargs):
+    def __init__(self, in_size=(4, 240, 240, 155), out_size=2, features='resnet50_ri', n_layers=7,
+                 prototype_shape=(20, 128, 1, 1, 1), init_weights=True, f_dist='l2',
+                 prototype_activation_function='log', p_mode=0, topk_p=1, **kwargs):
         super(MProtoNet, self).__init__()
         self.in_size = in_size
         self.prototype_shape = prototype_shape
@@ -156,42 +145,16 @@ class MProtoNet(nn.Module):
         # converts distance to similarity score
         self.prototype_activation_function = prototype_activation_function
 
-        '''
-        Here we are initializing the class identities of the prototypes
-        Without domain specific knowledge we allocate the same number of
-        prototypes for each class
-        '''
         assert self.num_prototypes % self.num_classes == 0
-        # a onehot indication matrix for each prototype's class identity
+        # A onehot indication matrix for each prototype's class identity
         self.prototype_class_identity = nn.Parameter(
             torch.zeros(self.num_prototypes, self.num_classes), requires_grad=False)
         self.num_prototypes_per_class = self.num_prototypes // self.num_classes
         for j in range(self.num_prototypes):
             self.prototype_class_identity[j, j // self.num_prototypes_per_class] = 1
-        self.c_mode = c_mode
-        if self.c_mode >= 2:
-            assert self.num_prototypes_per_class % self.in_size[0] == 0
-            self.c_prototype_identity = nn.Parameter(
-                torch.zeros(self.num_prototypes, self.in_size[0]), requires_grad=False)
-            self.c_num_prototypes_per_class = self.num_prototypes_per_class // self.in_size[0]
-            for j in range(self.num_prototypes):
-                j_per_class = j % self.num_prototypes_per_class
-                self.c_prototype_identity[j, j_per_class // self.c_num_prototypes_per_class] = 1
 
-        self.features_3d = features_3d
-        if self.features_3d:
-            while len(self.prototype_shape) < 5:
-                self.prototype_shape += (1,)
-        else:
-            self.trans = nn.Sequential(
-                nn.Conv3d(self.in_size[0], 32, 1, bias=False),
-                nn.BatchNorm3d(32),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(32, 3, 1, bias=False),
-                nn.BatchNorm3d(3),
-                nn.ReLU(inplace=True)
-            )
-            self.downsample_a = nn.MaxPool3d((1, 1, 12), stride=(1, 1, 8), padding=(0, 0, 4))
+        while len(self.prototype_shape) < 5:
+            self.prototype_shape += (1,)
         self.features = features_imagenet1k(features)[:n_layers]
         self.features_name = features + f'[:{n_layers}]' if n_layers else features
         add_ons_channels = [m for m in self.features.modules()
@@ -214,8 +177,7 @@ class MProtoNet(nn.Module):
 
         self.prototype_vectors = nn.Parameter(torch.rand(self.prototype_shape))
 
-        # do not make this just a tensor,
-        # since it will not be moved automatically to gpu
+        # Do not make this just a tensor, since it will not be automatically moved to GPU(s)
         self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)
 
         self.p_mode = p_mode
@@ -225,15 +187,12 @@ class MProtoNet(nn.Module):
                 layer_strides=layer_strides, layer_paddings=layer_paddings,
                 prototype_kernel_size=self.prototype_shape[3]
             )[0]
-            if self.features_3d:
-                p_size_a = compute_proto_layer_rf_info_v2(
-                    img_size=self.in_size[3], layer_filter_sizes=layer_filter_sizes,
-                    layer_strides=layer_strides, layer_paddings=layer_paddings,
-                    prototype_kernel_size=self.prototype_shape[4]
-                )[0]
-                self.p_size = (self.proto_layer_rf_info[0], p_size_w, p_size_a)
-            else:
-                self.p_size = (self.proto_layer_rf_info[0], p_size_w, self.in_size[3] // 8)
+            p_size_a = compute_proto_layer_rf_info_v2(
+                img_size=self.in_size[3], layer_filter_sizes=layer_filter_sizes,
+                layer_strides=layer_strides, layer_paddings=layer_paddings,
+                prototype_kernel_size=self.prototype_shape[4]
+            )[0]
+            self.p_size = (self.proto_layer_rf_info[0], p_size_w, p_size_a)
             self.topk_p = int(self.p_size[0] * self.p_size[1] * self.p_size[2] * topk_p / 100)
             assert self.topk_p >= 1
         if self.p_mode >= 2:
@@ -247,8 +206,6 @@ class MProtoNet(nn.Module):
             )
 
         self.last_layer = nn.Linear(self.num_prototypes, self.num_classes, bias=False)
-        if self.c_mode >= 1:
-            self.c_weight = nn.Parameter(torch.ones(self.in_size[0]))
 
         if init_weights:
             self._initialize_weights()
@@ -278,19 +235,7 @@ class MProtoNet(nn.Module):
         return (torch.logsumexp(r * x, dim=dim) - torch.log(torch.tensor(x.shape[dim]))) / r
 
     def conv_features(self, x):
-        '''
-        the feature input to prototype layer
-        '''
-        if self.c_mode >= 1:
-            x = x.reshape((-1, 1) + x.shape[2:])
-        if not self.features_3d:
-            x = self.trans(x)
-            a_size = x.shape[4]
-            x = x.permute(0, 4, 1, 2, 3).reshape((-1,) + x.shape[1:-1])
         x = self.features(x)
-        if not self.features_3d:
-            x = x.reshape((-1, a_size) + x.shape[1:]).permute(0, 2, 3, 4, 1)
-            x = self.downsample_a(x)
         f_x = self.add_ons(x)
         if self.p_mode >= 2:
             p_map = self.get_p_map(x)
@@ -298,40 +243,13 @@ class MProtoNet(nn.Module):
         else:
             return f_x
 
-    @staticmethod
-    def _weighted_l2_convolution(input, filter, weights):
-        '''
-        input of shape N * c * h * w
-        filter of shape P * c * h1 * w1
-        weight of shape P * c * h1 * w1
-        '''
-        input2 = input ** 2
-        input_patch_weighted_norm2 = F.conv2d(input=input2, weight=weights)
-        filter2 = filter ** 2
-        weighted_filter2 = filter2 * weights
-        filter_weighted_norm2 = torch.sum(weighted_filter2, dim=(1, 2, 3))
-        filter_weighted_norm2_reshape = filter_weighted_norm2.reshape(-1, 1, 1)
-        weighted_filter = filter * weights
-        weighted_inner_product = F.conv2d(input=input, weight=weighted_filter)
-        # use broadcast
-        intermediate_result = - 2 * weighted_inner_product + filter_weighted_norm2_reshape
-        # x2_patch_sum and intermediate_result are of the same shape
-        distances = F.relu(input_patch_weighted_norm2 + intermediate_result)
-        return distances
-
-    def l2_convolution(self, x):
-        '''
-        apply self.prototype_vectors as l2-convolution filters on input x
-        '''
+    def l2_convolution_2D(self, x):
         x_2 = F.conv2d(x ** 2, self.ones)
         xp = F.conv2d(x, self.prototype_vectors)
         p_2 = (self.prototype_vectors ** 2).sum((1, 2, 3)).reshape(-1, 1, 1)
         return F.relu(x_2 - 2 * xp + p_2)
 
     def l2_convolution_3D(self, x):
-        '''
-        apply self.prototype_vectors as l2-convolution filters on input x
-        '''
         if x.shape[1:] == self.prototype_shape:
             x_2 = (x ** 2).sum(2)
             xp = (x * self.prototype_vectors).sum(2)
@@ -341,7 +259,7 @@ class MProtoNet(nn.Module):
         p_2 = (self.prototype_vectors ** 2).sum((1, 2, 3, 4)).reshape(-1, 1, 1, 1)
         return F.relu(x_2 - 2 * xp + p_2)
 
-    def cosine_convolution(self, x):
+    def cosine_convolution_2D(self, x):
         assert x.min() >= 0, f"{x.min():.16g} >= 0"
         x_unit = F.normalize(x, p=2, dim=1)
         prototype_vectors_unit = F.normalize(self.prototype_vectors, p=2, dim=1)
@@ -397,11 +315,6 @@ class MProtoNet(nn.Module):
             min_distances = distances.amin(2)
         prototype_activations = self.distance_2_similarity(min_distances)
         logits = self.last_layer(prototype_activations)
-        if self.c_mode >= 1:
-            logits = logits.reshape(-1, self.in_size[0], logits.shape[1])
-            if missing is not None and not self.training:
-                logits[:, missing] = 0
-            logits = (logits * F.softmax(self.c_weight, dim=0).reshape(-1, 1)).sum(1)
         if self.p_mode >= 2 and self.training:
             return logits, min_distances, x, p_map
         elif self.training:
@@ -410,7 +323,6 @@ class MProtoNet(nn.Module):
             return logits
 
     def push_forward(self, x):
-        '''this method is needed for the pushing operation'''
         if self.p_mode >= 2:
             f_x, p_map, _ = self.conv_features(x)
             distances, p_map, p_x = self.prototype_distances(f_x, p_map)
@@ -421,38 +333,14 @@ class MProtoNet(nn.Module):
             return f_x, distances
 
     def prune_prototypes(self, prototypes_to_prune):
-        '''
-        prototypes_to_prune: a list of indices each in
-        [0, current number of prototypes - 1] that indicates the prototypes to
-        be removed
-        '''
-        prototypes_to_keep = list(set(range(self.num_prototypes)) - set(prototypes_to_prune))
-        self.prototype_vectors = nn.Parameter(self.prototype_vectors.data[prototypes_to_keep])
-        self.prototype_shape = tuple(self.prototype_vectors.shape)
-        self.num_prototypes = self.prototype_shape[0]
-        # changing self.last_layer in place
-        # changing in_features and out_features make sure the numbers are consistent
-        self.last_layer.in_features = self.num_prototypes
-        self.last_layer.out_features = self.num_classes
-        self.last_layer.weight.data = self.last_layer.weight.data[:, prototypes_to_keep]
-        # self.ones is nn.Parameter
-        self.ones = nn.Parameter(self.ones.data[prototypes_to_keep], requires_grad=False)
-        self.prototype_class_identity = nn.Parameter(
-            self.prototype_class_identity.data[prototypes_to_keep], requires_grad=False)
-        if self.p_mode >= 2:
-            self.p_map[3].out_channels = self.num_prototypes
-            self.p_map[3].weight.data = self.p_map[3].weight.data[prototypes_to_keep]
-            self.p_map[4].num_features = self.num_prototypes
-            self.p_map[4].weight.data = self.p_map[4].weight.data[prototypes_to_keep]
-            self.p_map[4].bias.data = self.p_map[4].bias.data[prototypes_to_keep]
-            self.p_map[4].running_mean.data = self.p_map[4].running_mean.data[prototypes_to_keep]
-            self.p_map[4].running_var.data = self.p_map[4].running_var.data[prototypes_to_keep]
+        # TODO: Pruning
+        pass
 
     def __repr__(self):
-        # MProtoNet3D(self, features, img_size, prototype_shape,
-        # proto_layer_rf_info, num_classes, init_weights=True):
+        # MProtoNet(self, features, img_size, prototype_shape, proto_layer_rf_info, num_classes,
+        # epsilon, p_size, topk_p):
         return (
-            f"MProtoNet{'3D' if self.features_3d else '2D'}(\n"
+            f"MProtoNet(\n"
             f"\tfeatures: {self.features_name},\n"
             f"\timg_size: {self.in_size[1:]},\n"
             f"\tprototype_shape: {self.prototype_shape},\n"
@@ -465,9 +353,6 @@ class MProtoNet(nn.Module):
         )
 
     def set_last_layer_incorrect_connection(self, incorrect_strength):
-        '''
-        the incorrect strength will be actual strength if -0.5 then input -0.5
-        '''
         positive_one_weights_locations = self.prototype_class_identity.mT
         negative_one_weights_locations = 1 - positive_one_weights_locations
         correct_class_connection = 1
@@ -478,15 +363,8 @@ class MProtoNet(nn.Module):
         )
 
     def _initialize_weights(self):
-        if self.features_3d:
-            if self.c_mode >= 1:
-                if self.features_name.startswith('resnet'):
-                    init_resnet3d_features(self.features, in_channels=1)
-            else:
-                if self.features_name.startswith('resnet'):
-                    init_resnet3d_features(self.features, in_channels=self.in_size[0])
-        else:
-            init_conv(self.trans)
+        if self.features_name.startswith('resnet'):
+            init_resnet3d_features(self.features, in_channels=self.in_size[0])
         init_conv(self.add_ons)
         if self.p_mode >= 2:
             init_conv(self.p_map)
@@ -494,8 +372,4 @@ class MProtoNet(nn.Module):
 
 
 def MProtoNet3D(**kwargs):
-    return MProtoNet(features_3d=True, **kwargs)
-
-
-def MProtoNet2D(**kwargs):
-    return MProtoNet(features_3d=False, **kwargs)
+    return MProtoNet(**kwargs)

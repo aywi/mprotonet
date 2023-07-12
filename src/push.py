@@ -149,10 +149,6 @@ def update_prototypes_on_batch(search_batch_input,
         proto_dist_ = np.copy(proto_dist_torch.detach().cpu().numpy())
         del search_batch, protoL_input_torch, proto_dist_torch
 
-    if ppnet.c_mode >= 1:
-        search_y = search_y[:, None].repeat(1, search_batch_input.shape[1]).reshape(-1)
-        c_index = torch.arange(search_batch_input.shape[1]).repeat(search_batch_input.shape[0])
-        search_batch_input = search_batch_input.reshape((-1, 1) + search_batch_input.shape[2:])
     if class_specific:
         class_to_img_index_dict = {key: [] for key in range(num_classes)}
         # img_y is the image's integer label
@@ -182,10 +178,6 @@ def update_prototypes_on_batch(search_batch_input,
             if len(class_to_img_index_dict[target_class]) == 0:
                 continue
             proto_dist_j = proto_dist_[class_to_img_index_dict[target_class]][:, j]
-            if ppnet.c_mode >= 2:
-                c_index_j = c_index[class_to_img_index_dict[target_class]]
-                c_prototype_j = ppnet.c_prototype_identity[j].argmax().item()
-                proto_dist_j = proto_dist_j[c_index_j == c_prototype_j]
         else:
             # if it is not class specific, then we will search through
             # every example
@@ -201,10 +193,7 @@ def update_prototypes_on_batch(search_batch_input,
                 images of the target class to the index in the entire search
                 batch
                 '''
-                if ppnet.c_mode >= 2:
-                    batch_argmin_proto_dist_j[0] = np.array(class_to_img_index_dict[target_class])[c_index_j == c_prototype_j][batch_argmin_proto_dist_j[0]]
-                else:
-                    batch_argmin_proto_dist_j[0] = class_to_img_index_dict[target_class][batch_argmin_proto_dist_j[0]]
+                batch_argmin_proto_dist_j[0] = class_to_img_index_dict[target_class][batch_argmin_proto_dist_j[0]]
 
             # retrieve the corresponding feature map patch
             img_index_in_batch = batch_argmin_proto_dist_j[0]
@@ -259,16 +248,13 @@ def update_prototypes_on_batch(search_batch_input,
                                       rf_prototype_j[3]:rf_prototype_j[4], :]
 
             # save the prototype receptive field information
-            if ppnet.c_mode >= 1:
-                pass
-            else:
-                proto_rf_boxes[j, 0] = rf_prototype_j[0] + start_index_of_search_batch
-                proto_rf_boxes[j, 1] = rf_prototype_j[1]
-                proto_rf_boxes[j, 2] = rf_prototype_j[2]
-                proto_rf_boxes[j, 3] = rf_prototype_j[3]
-                proto_rf_boxes[j, 4] = rf_prototype_j[4]
-                if proto_rf_boxes.shape[1] == 6 and search_y is not None:
-                    proto_rf_boxes[j, 5] = search_y[rf_prototype_j[0]].item()
+            proto_rf_boxes[j, 0] = rf_prototype_j[0] + start_index_of_search_batch
+            proto_rf_boxes[j, 1] = rf_prototype_j[1]
+            proto_rf_boxes[j, 2] = rf_prototype_j[2]
+            proto_rf_boxes[j, 3] = rf_prototype_j[3]
+            proto_rf_boxes[j, 4] = rf_prototype_j[4]
+            if proto_rf_boxes.shape[1] == 6 and search_y is not None:
+                proto_rf_boxes[j, 5] = search_y[rf_prototype_j[0]].item()
 
             # find the highly activated region of the original image
             if is_3D:
@@ -301,16 +287,13 @@ def update_prototypes_on_batch(search_batch_input,
                                          proto_bound_j[2]:proto_bound_j[3], :]
 
             # save the prototype boundary (rectangular boundary of highly activated region)
-            if ppnet.c_mode >= 1:
-                pass
-            else:
-                proto_bound_boxes[j, 0] = proto_rf_boxes[j, 0]
-                proto_bound_boxes[j, 1] = proto_bound_j[0]
-                proto_bound_boxes[j, 2] = proto_bound_j[1]
-                proto_bound_boxes[j, 3] = proto_bound_j[2]
-                proto_bound_boxes[j, 4] = proto_bound_j[3]
-                if proto_bound_boxes.shape[1] == 6 and search_y is not None:
-                    proto_bound_boxes[j, 5] = search_y[rf_prototype_j[0]].item()
+            proto_bound_boxes[j, 0] = proto_rf_boxes[j, 0]
+            proto_bound_boxes[j, 1] = proto_bound_j[0]
+            proto_bound_boxes[j, 2] = proto_bound_j[1]
+            proto_bound_boxes[j, 3] = proto_bound_j[2]
+            proto_bound_boxes[j, 4] = proto_bound_j[3]
+            if proto_bound_boxes.shape[1] == 6 and search_y is not None:
+                proto_bound_boxes[j, 5] = search_y[rf_prototype_j[0]].item()
 
             if dir_for_saving_prototypes is not None:
                 # if prototype_self_act_filename_prefix is not None:
@@ -322,14 +305,6 @@ def update_prototypes_on_batch(search_batch_input,
                     # save the whole image containing the prototype as png
                     n_d = len(f'{n_prototypes}')
                     modalities = ['t1', 't1ce', 't2', 'flair']
-                    if ppnet.c_mode >= 1:
-                        c_index_j = c_index[img_index_in_batch]
-                        modalities = modalities[c_index_j:c_index_j + 1]
-                        if ppnet.c_mode == 1:
-                            for img in glob.glob(os.path.join(dir_for_saving_prototypes,
-                                                              f'{prototype_img_filename_prefix}'
-                                                              f'*{j + 1:0{n_d}d}-*.png')):
-                                os.remove(img)
                     original_img_j_ = original_img_j - np.amin(original_img_j)
                     original_img_j_ = original_img_j_ / np.amax(original_img_j_).clip(ppnet.epsilon)
                     # for m in range(len(modalities)):
