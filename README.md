@@ -49,6 +49,8 @@ If you are using Miniconda/Anaconda, you can run `setup_conda.sh` (Linux) or `se
 
 ## Acknowledgment
 
+This repository contains modified source code from [cfchen-duke/ProtoPNet](https://github.com/cfchen-duke/ProtoPNet "https://github.com/cfchen-duke/ProtoPNet") ([MIT License](https://github.com/cfchen-duke/ProtoPNet/blob/81bf2b70cb60e4f36e25e8be386eb616b7459321/LICENSE "https://github.com/cfchen-duke/ProtoPNet/blob/81bf2b70cb60e4f36e25e8be386eb616b7459321/LICENSE")) by Chaofan Chen, Oscar Li, Chaofan Tao, Alina Jade Barnett, and Cynthia Rudin.
+
 ## Citation
 
 Yuanyuan Wei, Roger Tam, and Xiaoying Tang. MProtoNet: a case-based interpretable model for brain tumor classification with 3D multi-parametric magnetic resonance imaging. In *Medical Imaging with Deep Learning*, Nashville, United States, July 2023.
