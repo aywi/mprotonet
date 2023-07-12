@@ -1,6 +1,6 @@
 # MProtoNet
 
-This repository contains the official implementation of MProtoNet from the paper "[MProtoNet: A Case-Based Interpretable Model for Brain Tumor Classification with 3D Multi-parametric Magnetic Resonance Imaging](https://openreview.net/forum?id=6Wbj3QCo4U4 "https://openreview.net/forum?id=6Wbj3QCo4U4")" (accepted for oral presentation at [MIDL 2023](https://2023.midl.io/ "https://2023.midl.io/")) by Yuanyuan Wei, Roger Tam, and Xiaoying Tang.
+This repository contains the official implementation of MProtoNet from the paper "[MProtoNet: A Case-Based Interpretable Model for Brain Tumor Classification with 3D Multi-parametric Magnetic Resonance Imaging](https://openreview.net/forum?id=6Wbj3QCo4U4 "https://openreview.net/forum?id=6Wbj3QCo4U4")" (accepted at [MIDL 2023](https://2023.midl.io/ "https://2023.midl.io/")) by Yuanyuan Wei, Roger Tam, and Xiaoying Tang.
 
 ![Architecture](./images/architecture.png "The overall architecture of MProtoNet")
 
@@ -23,6 +23,7 @@ Stay tuned for the latest updates!
   - `setup_conda.sh`: Setup script (Linux) for Miniconda/Anaconda
 - `results/`: Results
 - `src/`: Source code
+  - `tumor_cls.py`: Major code for running the experiments
 
 ## Dataset
 
@@ -70,6 +71,6 @@ Yuanyuan Wei, Roger Tam, and Xiaoying Tang. MProtoNet: a case-based interpretabl
   - [x] Upload setup scripts for Miniconda/Anaconda
   - [ ] Upload `environment.yml` for Miniconda/Anaconda
   - [ ] Upload `requirements.txt` for pip
-- [ ] Upload clean source code
+- [x] Upload source code
 - [ ] Experiments instructions
 - [ ] Results
