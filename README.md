@@ -2,11 +2,9 @@
 
 This repository contains the official implementation of MProtoNet from the paper "[MProtoNet: A Case-Based Interpretable Model for Brain Tumor Classification with 3D Multi-parametric Magnetic Resonance Imaging](https://openreview.net/forum?id=6Wbj3QCo4U4 "https://openreview.net/forum?id=6Wbj3QCo4U4")" (accepted at [MIDL 2023](https://2023.midl.io/papers/p218 "https://2023.midl.io/papers/p218")) by Yuanyuan Wei, Roger Tam, and Xiaoying Tang.
 
-Presentation: <https://www.youtube.com/watch?v=DtfXwrliVQg>
+Talk: <https://www.youtube.com/watch?v=DtfXwrliVQg>
 
 ![Architecture](./images/architecture.png "The overall architecture of MProtoNet")
-
-Stay tuned for the latest updates!
 
 - [Directory Structure](#directory-structure)
 - [Dataset](#dataset)
@@ -45,6 +43,24 @@ If you are using Miniconda/Anaconda, you can run `setup_conda.sh` (Linux) or `se
 
 ## Experiments
 
+The following experiments can consume about 12~18 GB of GPU memory.
+
+```sh
+cd ./src
+# CNN (with GradCAM)
+python ./tumor_cls.py -m CNN3D -n 100 -p "{'batch_size': [32], 'lr': [0.001], 'wd': [0.01], 'features': ['resnet152_ri'], 'n_layers': [6]}" --save-model 1
+# ProtoPNet
+python ./tumor_cls.py -m MProtoNet3D_pm1 -n 100 -p "{'batch_size': [32], 'lr': [0.001], 'wd': [0.01], 'features': ['resnet152_ri'], 'n_layers': [6], 'prototype_shape': [(30, 128, 1, 1, 1)], 'f_dist': ['cos'], 'topk_p': [1], 'coefs': [{'cls': 1, 'clst': 0.8, 'sep': -0.08, 'L1': 0.01, 'map': 0, 'OC': 0}]}" --save-model 1
+# XProtoNet
+python ./tumor_cls.py -m MProtoNet3D_pm2 -n 100 -p "{'batch_size': [32], 'lr': [0.001], 'wd': [0.01], 'features': ['resnet152_ri'], 'n_layers': [6], 'prototype_shape': [(30, 128, 1, 1, 1)], 'f_dist': ['cos'], 'topk_p': [1], 'coefs': [{'cls': 1, 'clst': 0.8, 'sep': -0.08, 'L1': 0.01, 'map': 0.5, 'OC': 0}]}" --save-model 1
+# MProtoNet A
+python ./tumor_cls.py -m MProtoNet3D_pm3 -n 100 -p "{'batch_size': [32], 'lr': [0.001], 'wd': [0.01], 'features': ['resnet152_ri'], 'n_layers': [6], 'prototype_shape': [(30, 128, 1, 1, 1)], 'f_dist': ['cos'], 'topk_p': [1], 'coefs': [{'cls': 1, 'clst': 0.8, 'sep': -0.08, 'L1': 0.01, 'map': 0.5, 'OC': 0}]}" --save-model 1
+# MProtoNet B
+python ./tumor_cls.py -m MProtoNet3D_pm4 -n 100 -p "{'batch_size': [32], 'lr': [0.001], 'wd': [0.01], 'features': ['resnet152_ri'], 'n_layers': [6], 'prototype_shape': [(30, 128, 1, 1, 1)], 'f_dist': ['cos'], 'topk_p': [1], 'coefs': [{'cls': 1, 'clst': 0.8, 'sep': -0.08, 'L1': 0.01, 'map': 0.5, 'OC': 0.05}]}" --save-model 1
+# MProtoNet C
+python ./tumor_cls.py -m MProtoNet3D_pm5 -n 100 -p "{'batch_size': [32], 'lr': [0.001], 'wd': [0.01], 'features': ['resnet152_ri'], 'n_layers': [6], 'prototype_shape': [(30, 128, 1, 1, 1)], 'f_dist': ['cos'], 'topk_p': [1], 'coefs': [{'cls': 1, 'clst': 0.8, 'sep': -0.08, 'L1': 0.01, 'map': 0.5, 'OC': 0.05}]}" --save-model 1
+```
+
 ## Results
 
 ## Acknowledgment
@@ -76,5 +92,5 @@ Yuanyuan Wei, Roger Tam, and Xiaoying Tang. MProtoNet: a case-based interpretabl
   - [ ] Upload `environment.yml` for Miniconda/Anaconda
   - [ ] Upload `requirements.txt` for pip
 - [x] Upload source code
-- [ ] Experiments instructions
+- [x] Experiments
 - [ ] Results
