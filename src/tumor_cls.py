@@ -369,7 +369,7 @@ if __name__ == '__main__':
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         kwargs = {'in_size': in_size, 'out_size': out_size}
-        for arg in ['kernel_size', 'stride', 'features', 'n_layers', 'fixed']:
+        for arg in ['features', 'n_layers']:
             if best_grid.get(arg):
                 kwargs[arg] = best_grid[arg]
         if 'MProtoNet' in model_name:
@@ -445,16 +445,15 @@ if __name__ == '__main__':
             else:
                 optimizer = optim.SGD(net.parameters(), lr=best_grid['lr'], momentum=0.9,
                                       weight_decay=best_grid['wd'])
-        if ('WU' in lr_opt or 'MProtoNet' in model_name or '_pt' in model_name) and wu_n <= 0:
+        if 'WU' in lr_opt and wu_n <= 0:
             wu_n = best_n_epoch // 5
-        wu_e = wu_n // 2
         if 'StepLR' in lr_opt:
             if lr_n <= 0:
                 lr_n = best_n_epoch // 10
             scheduler = optim.lr_scheduler.StepLR(optimizer, lr_n)
         elif 'CosALR' in lr_opt:
             if lr_n <= 0:
-                lr_n = best_n_epoch - wu_n if 'WU' in lr_opt else best_n_epoch - wu_e
+                lr_n = best_n_epoch - wu_n if 'WU' in lr_opt else best_n_epoch
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, lr_n)
         if 'WU' in lr_opt:
             scheduler0 = optim.lr_scheduler.LambdaLR(optimizer, lambda e: (e + 1) / wu_n)
@@ -485,24 +484,11 @@ if __name__ == '__main__':
             torch.cuda.manual_seed_all(seed)
             for e in range(best_n_epoch):
                 print(f" {e + 1}", end='', flush=True)
-                if '_pt' in model_name and not best_grid.get('fixed'):
-                    if lr_opt != 'Off' and ('WU' in lr_opt or e >= wu_e):
-                        print(f"(lr={scheduler.get_last_lr()[0]:g})", end='', flush=True)
-                    if e < wu_e:
-                        for p in net.features.parameters():
-                            p.requires_grad = False
-                    elif e == wu_e:
-                        for p in net.features.parameters():
-                            p.requires_grad = True
-                    train(net, loader_train, optimizer)
-                    if lr_opt != 'Off' and ('WU' in lr_opt or e >= wu_e):
-                        scheduler.step()
-                else:
-                    if lr_opt != 'Off':
-                        print(f"(lr={scheduler.get_last_lr()[0]:g})", end='', flush=True)
-                    train(net, loader_train, optimizer, grid=best_grid, stage='joint')
-                    if lr_opt != 'Off':
-                        scheduler.step()
+                if lr_opt != 'Off':
+                    print(f"(lr={scheduler.get_last_lr()[0]:g})", end='', flush=True)
+                train(net, loader_train, optimizer, grid=best_grid, stage='joint')
+                if lr_opt != 'Off':
+                    scheduler.step()
                 if 'MProtoNet' in model_name and e + 1 >= 10 and e + 1 in [i for i in
                                                                            range(best_n_epoch + 1)
                                                                            if i % 10 == 0]:

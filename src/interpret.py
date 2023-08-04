@@ -184,7 +184,7 @@ if __name__ == '__main__':
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         kwargs = {'in_size': in_size, 'out_size': out_size}
-        for arg in ['kernel_size', 'stride', 'features', 'n_layers', 'fixed']:
+        for arg in ['features', 'n_layers']:
             if best_grid.get(arg):
                 kwargs[arg] = best_grid[arg]
         if 'MProtoNet' in model_name:
