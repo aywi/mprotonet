@@ -3,7 +3,6 @@ channels:
   - pytorch
   - defaults
 dependencies:
-  - captum=0.6.0
   - jupyter=1.0.0
   - matplotlib=3.8.0
   - numpy=1.26.0
@@ -16,5 +15,6 @@ dependencies:
   - torchaudio=2.1.1
   - torchvision=0.16.1
   - pip:
+      - captum==0.6.0
       - opencv-contrib-python==4.8.1.78
       - torchio==0.19.2
