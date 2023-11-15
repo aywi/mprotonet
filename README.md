@@ -19,8 +19,6 @@ Talk: <https://www.youtube.com/watch?v=DtfXwrliVQg>
 
 - `data/`: Dataset
 - `env_config/`: Environment configuration
-  - `setup_conda.cmd`: Setup script (Windows) for Miniconda/Anaconda
-  - `setup_conda.sh`: Setup script (Linux) for Miniconda/Anaconda
 - `results/`: Results
 - `src/`: Source code
   - `tumor_cls.py`: Major code for running the experiments
@@ -37,9 +35,18 @@ unzip ./data/MICCAI_BraTS2020_TrainingData.zip -d ./data/BraTS_2020
 
 ## Environment Configuration
 
-Prerequisites: Python (>=3.7), NumPy, SciPy, scikit-learn, Matplotlib, Jupyter, PyTorch, Captum, OpenCV, TorchIO.
+Prerequisites: Python (>=3.8), NumPy, SciPy, scikit-learn, Matplotlib, Jupyter, PyTorch, Captum, OpenCV, TorchIO.
 
-If you are using Miniconda/Anaconda, you can run `setup_conda.sh` (Linux) or `setup_conda.cmd` (Windows) in `env_config/`  to create a new conda environment called `mprotonet` with all the required packages (they can take up about 11 GB of disk space).
+If you are using Miniconda/Anaconda, you can run following commands (Linux & Windows) to create a new conda environment called `mprotonet` with all the required packages (they can take up about 10 GB of disk space).
+
+```sh
+conda env create -f ./env_config/environment.yml -n mprotonet -y
+# Or if you want to install the latest versions of the packages (with Python 3.11 and CUDA 11):
+# conda env create -f ./env_config/environment_latest.yml -n mprotonet -y
+conda activate mprotonet
+conda clean -a -y
+conda env list
+```
 
 ## Experiments
 
@@ -87,10 +94,7 @@ Yuanyuan Wei, Roger Tam, and Xiaoying Tang. MProtoNet: a case-based interpretabl
 ## To-do List
 
 - [x] Dataset
-- [ ] Environment configuration
-  - [x] Upload setup scripts for Miniconda/Anaconda
-  - [ ] Upload `environment.yml` for Miniconda/Anaconda
-  - [ ] Upload `requirements.txt` for pip
+- [x] Environment configuration
 - [x] Upload source code
 - [x] Experiments
 - [ ] Results

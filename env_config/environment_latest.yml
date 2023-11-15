@@ -1,0 +1,20 @@
+channels:
+  - nvidia
+  - pytorch
+  - defaults
+dependencies:
+  - captum
+  - jupyter
+  - matplotlib
+  - numpy
+  - pip
+  - python=3.11
+  - pytorch
+  - pytorch-cuda=11
+  - scikit-learn
+  - scipy
+  - torchaudio
+  - torchvision
+  - pip:
+      - opencv-contrib-python
+      - torchio
