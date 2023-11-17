@@ -1,6 +1,6 @@
 channels:
-  - nvidia
   - pytorch
+  - nvidia
   - defaults
 dependencies:
   - jupyter
@@ -10,11 +10,11 @@ dependencies:
   - python=3.11
   - pytorch
   - pytorch-cuda=11
-  - scikit-learn
+  - scikit-learn>=1.3
   - scipy
   - torchaudio
   - torchvision
   - pip:
       - captum
-      - opencv-contrib-python
+      - opencv-contrib-python-headless
       - torchio
