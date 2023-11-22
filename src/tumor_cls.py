@@ -4,6 +4,7 @@ import argparse
 import ast
 import time
 import warnings
+from functools import partial
 
 import numpy as np
 import torch
@@ -91,8 +92,8 @@ def train_mppnet(net, data_loader, optimizer, use_l1_mask=True, coefs=None, stag
                 # Calculate mapping loss
                 if getattr(net, 'module.p_mode' if is_parallel else 'p_mode') >= 2:
                     ri = torch.randint(2, (1,)).item()
-                    f_affine = lambda t: F.interpolate(
-                        t, scale_factor=(0.75, 0.875)[ri],
+                    f_affine = partial(
+                        F.interpolate, scale_factor=(0.75, 0.875)[ri],
                         mode='trilinear' if x.ndim == 5 else 'bilinear', align_corners=True
                     )
                     f_l1 = lambda t: t.abs().mean()

@@ -6,6 +6,7 @@ import os
 import socket
 import time
 import zlib
+from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -174,41 +175,40 @@ def preprocess(data_loader):
     return np.array(x)
 
 
-def augment_contrast(contrast_range=(0.75, 1.25), preserve_range=True):
-    def aug_contrast(t):
-        if torch.rand(1) < 0.5 and contrast_range[0] < 1:
-            factor = torch.empty(1).uniform_(contrast_range[0], 1)
-        else:
-            factor = torch.empty(1).uniform_(max(contrast_range[0], 1), contrast_range[1])
-        t_mean = t.mean()
-        if preserve_range:
-            return ((t - t_mean) * factor + t_mean).clamp(t.min(), t.max())
-        else:
-            return (t - t_mean) * factor + t_mean
-
-    return aug_contrast
+def augment_brightness(t, multiplier_range=(0.5, 2)):
+    multiplier = torch.empty(1).uniform_(multiplier_range[0], multiplier_range[1])
+    return t * multiplier
 
 
-def augment_gamma(gamma_range=(0.5, 2), invert_image=False, epsilon=1e-12, retain_stats=True):
-    def aug_gamma(t):
-        if invert_image:
-            t = -t
-        if retain_stats:
-            t_mean, t_std = t.mean(), t.std()
-        if torch.rand(1) < 0.5 and gamma_range[0] < 1:
-            gamma = torch.empty(1).uniform_(gamma_range[0], 1)
-        else:
-            gamma = torch.empty(1).uniform_(max(gamma_range[0], 1), gamma_range[1])
-        t_min = t.min()
-        t_range = (t.max() - t_min).clamp_min(epsilon)
-        t = ((t - t_min) / t_range) ** gamma * t_range + t_min
-        if retain_stats:
-            t = (t - t.mean()) / t.std().clamp_min(epsilon) * t_std + t_mean
-        if invert_image:
-            t = -t
-        return t
+def augment_contrast(t, contrast_range=(0.75, 1.25), preserve_range=True):
+    if torch.rand(1) < 0.5 and contrast_range[0] < 1:
+        factor = torch.empty(1).uniform_(contrast_range[0], 1)
+    else:
+        factor = torch.empty(1).uniform_(max(contrast_range[0], 1), contrast_range[1])
+    t_mean = t.mean()
+    if preserve_range:
+        return ((t - t_mean) * factor + t_mean).clamp(t.min(), t.max())
+    else:
+        return (t - t_mean) * factor + t_mean
 
-    return aug_gamma
+
+def augment_gamma(t, gamma_range=(0.5, 2), invert_image=False, epsilon=1e-12, retain_stats=True):
+    if invert_image:
+        t = -t
+    if retain_stats:
+        t_mean, t_std = t.mean(), t.std()
+    if torch.rand(1) < 0.5 and gamma_range[0] < 1:
+        gamma = torch.empty(1).uniform_(gamma_range[0], 1)
+    else:
+        gamma = torch.empty(1).uniform_(max(gamma_range[0], 1), gamma_range[1])
+    t_min = t.min()
+    t_range = (t.max() - t_min).clamp_min(epsilon)
+    t = ((t - t_min) / t_range) ** gamma * t_range + t_min
+    if retain_stats:
+        t = (t - t.mean()) / t.std().clamp_min(epsilon) * t_std + t_mean
+    if invert_image:
+        t = -t
+    return t
 
 
 transform_augs: dict = {
@@ -246,10 +246,10 @@ transform_augs: dict = {
         ],
         p=0.2,
     ),
-    'br0': tio.Lambda(lambda t: t * torch.empty(1).uniform_(0.7, 1.3),
+    'br0': tio.Lambda(partial(augment_brightness, multiplier_range=(0.7, 1.3)),
                       types_to_apply=[tio.INTENSITY], p=0.15),
-    'co0': tio.Lambda(augment_contrast(contrast_range=(0.65, 1.5)), types_to_apply=[tio.INTENSITY],
-                      p=0.15),
+    'co0': tio.Lambda(partial(augment_contrast, contrast_range=(0.65, 1.5)),
+                      types_to_apply=[tio.INTENSITY], p=0.15),
     'an0': tio.Compose(
         [
             tio.RandomAnisotropy(downsampling=(1, 2), p=0.5, include=['t1']),
@@ -259,9 +259,9 @@ transform_augs: dict = {
         ],
         p=0.25,
     ),
-    'gi0': tio.Lambda(augment_gamma(gamma_range=(0.7, 1.5), invert_image=True),
+    'gi0': tio.Lambda(partial(augment_gamma, gamma_range=(0.7, 1.5), invert_image=True),
                       types_to_apply=[tio.INTENSITY], p=0.15),
-    'ga0': tio.Lambda(augment_gamma(gamma_range=(0.7, 1.5), invert_image=False),
+    'ga0': tio.Lambda(partial(augment_gamma, gamma_range=(0.7, 1.5), invert_image=False),
                       types_to_apply=[tio.INTENSITY], p=0.15),
     'fl0': tio.RandomFlip(axes=(0, 1, 2)),
     'fl1': tio.RandomFlip(),
